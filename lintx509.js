@@ -5,6 +5,7 @@ const CONSTRUCTED = 1 << 5;
 const CONTEXT_SPECIFIC = 2 << 6;
 
 const SEQUENCE = UNIVERSAL | CONSTRUCTED | 0x10; // 0x30
+const SET = UNIVERSAL | CONSTRUCTED | 0x11; // 0x31
 const BOOLEAN = UNIVERSAL | 0x01; // 0x01
 const INTEGER = UNIVERSAL | 0x02; // 0x02
 const OCTETSTRING = UNIVERSAL | 0x04; // 0x04
@@ -146,6 +147,10 @@ der.prototype = {
     return new der(this._readTagAndGetContents(SEQUENCE));
   },
 
+  readSET: function() {
+    return new der(this._readTagAndGetContents(SET));
+  },
+
   readINTEGER: function() {
     // TODO: validate contents, handle negative values
     // TODO: handle restrictions on values
@@ -233,6 +238,7 @@ oid.prototype = {
     "1.2.840.113549.1.1.11": "sha256WithRSAEncryption",
     "2.5.29.30": "id-ce-nameConstraints",
     "2.5.29.37": "id-ce-extKeyUsage",
+    "2.5.4.3": "id-at-commonName",
   },
 
   asDottedString: function() {
@@ -360,7 +366,7 @@ TBSCertificate.prototype = {
     }
 
     try {
-      this._subjectPublicKeyInfo = new Name(contents.readTLV());
+      this._subjectPublicKeyInfo = new SubjectPublicKeyInfo(contents.readTLV());
       this._subjectPublicKeyInfo.parse();
     } catch (e) {
       console.log("error parsing subjectPublicKeyInfo");
@@ -436,10 +442,90 @@ AlgorithmIdentifier.prototype = {
 
 var Name = function(der) {
   this._der = der;
+  this._rdns = null;
 };
 
 Name.prototype = {
   parse: function() {
+    var contents;
+    try {
+      contents = this._der.readSEQUENCE();
+      console.log(contents);
+    } catch (e) {
+      console.log("error parsing Name");
+      throw e;
+    }
+    try {
+      this._rdns = [];
+      while (!contents.atEnd()) {
+        var rdn = new RDN(contents.readTLV());
+        rdn.parse();
+        this._rdns.push(rdn);
+      }
+    } catch (e) {
+      console.log("error parsing Name");
+      throw e;
+    }
+    contents.assertAtEnd();
+    this._der.assertAtEnd();
+  },
+};
+
+var RDN = function(der) {
+  this._der = der;
+  this._avas = null;
+};
+
+RDN.prototype = {
+  parse: function() {
+    var contents;
+    try {
+      contents = this._der.readSET();
+    } catch (e) {
+      console.log("error parsing RDN");
+      throw e;
+    }
+    try {
+      this._avas = [];
+      while (!contents.atEnd()) {
+        var ava = new AVA(contents.readTLV());
+        ava.parse();
+        this._avas.push(ava);
+      }
+    } catch (e) {
+      console.log("error parsing RDN");
+      throw e;
+    }
+    contents.assertAtEnd();
+    this._der.assertAtEnd();
+  },
+};
+
+var AVA = function(der) {
+  this._der = der;
+  this._type = null;
+  this._value = null;
+};
+
+AVA.prototype = {
+  parse: function() {
+    var contents;
+    try {
+      contents = this._der.readSEQUENCE();
+    } catch (e) {
+      console.log("error parsing AVA");
+      throw e;
+    }
+    try {
+      this._type = contents.readOID();
+      this._value = contents.readTLV();
+      // TODO...
+    } catch (e) {
+      console.log("error parsing AVA");
+      throw e;
+    }
+    contents.assertAtEnd();
+    this._der.assertAtEnd();
   },
 };
 
@@ -564,6 +650,15 @@ Validity.prototype = {
   },
 };
 
+var SubjectPublicKeyInfo = function(der) {
+  this._der = der;
+};
+
+SubjectPublicKeyInfo.prototype = {
+  parse: function() {
+  },
+};
+
 var Extension = function(der) {
   this._der = der;
   this._oid = null;
@@ -643,6 +738,5 @@ var pem = "-----BEGIN CERTIFICATE-----\n" +
 var bytes = pemToBytes(pem);
 var cert = new Certificate(bytes);
 cert.parse();
-console.log(cert._tbsCertificate._extensions);
-console.log(cert._tbsCertificate._extensions[0]._oid.toString());
-console.log(cert._tbsCertificate._extensions[1]._oid.toString());
+console.log(cert._tbsCertificate._issuer._rdns[0]._avas[0]._type.toString());
+console.log(cert._tbsCertificate._subject._rdns[0]._avas[0]._type.toString());
