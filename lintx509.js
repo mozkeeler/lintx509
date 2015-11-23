@@ -4,16 +4,20 @@ const UNIVERSAL = 0 << 6;
 const CONSTRUCTED = 1 << 5;
 const CONTEXT_SPECIFIC = 2 << 6;
 
-const SEQUENCE = UNIVERSAL | CONSTRUCTED | 0x10; // 0x30
-const SET = UNIVERSAL | CONSTRUCTED | 0x11; // 0x31
 const BOOLEAN = UNIVERSAL | 0x01; // 0x01
 const INTEGER = UNIVERSAL | 0x02; // 0x02
-const OCTETSTRING = UNIVERSAL | 0x04; // 0x04
 const BITSTRING = UNIVERSAL | 0x03; // 0x03
+const OCTETSTRING = UNIVERSAL | 0x04; // 0x04
 const NULL = UNIVERSAL | 0x05; // 0x05
 const OID = UNIVERSAL | 0x06; // 0x06
+const UTF8String = UNIVERSAL | 0x0c; // 0x0c
+const PrintableString = UNIVERSAL | 0x13; // 0x13
+const TeletexString = UNIVERSAL | 0x14; // 0x14
+const IA5String = UNIVERSAL | 0x16; // 0x16
 const UTCTime = UNIVERSAL | 0x17; // 0x17
 const GeneralizedTime = UNIVERSAL | 0x18; // 0x18
+const SEQUENCE = UNIVERSAL | CONSTRUCTED | 0x10; // 0x30
+const SET = UNIVERSAL | CONSTRUCTED | 0x11; // 0x31
 
 const ERROR_DATA_TRUNCATED = "error: data truncated";
 const ERROR_UNEXPECTED_TAG = "error: unexpected tag";
@@ -27,6 +31,7 @@ const ERROR_TIME_NOT_UTCTIME_OR_GENERALIZED_TIME = "error: Time not UTCTime or G
 const ERROR_TIME_NOT_VALID = "error: Time not valid";
 const ERROR_INVALID_BOOLEAN_ENCODING = "error: invalid BOOLEAN encoding";
 const ERROR_INVALID_BOOLEAN_VALUE = "error: invalid BOOLEAN value";
+const ERROR_UNSUPPORTED_STRING_TYPE = "error: unsupported string type";
 
 var der = function(bytes) {
   this._bytes = bytes;
@@ -206,6 +211,10 @@ der.prototype = {
       throw ERROR_NULL_WITH_DATA;
     }
     return null;
+  },
+
+  readContents: function(tag) {
+    return this._readTagAndGetContents(tag);
   },
 };
 
@@ -518,14 +527,48 @@ AVA.prototype = {
     }
     try {
       this._type = contents.readOID();
-      this._value = contents.readTLV();
-      // TODO...
+      this._value = new StringType(contents.readTLV());
+      this._value.parse();
     } catch (e) {
       console.log("error parsing AVA");
       throw e;
     }
     contents.assertAtEnd();
     this._der.assertAtEnd();
+  },
+};
+
+var StringType = function(der) {
+  this._der = der;
+  this._type = null;
+  this._value = null;
+};
+
+StringType.prototype = {
+  parse: function() {
+    try {
+      if (this._der.peekTag(UTF8String)) {
+        this._type = UTF8String;
+      } else if (this._der.peekTag(PrintableString)) {
+        this._type = PrintableString;
+      } else if (this._der.peekTag(TeletexString)) {
+        this._type = TeletexString;
+      } else if (this._der.peekTag(IA5String)) {
+        this._type = IA5String;
+      } else {
+        throw ERROR_UNSUPPORTED_STRING_TYPE;
+      }
+      this._value = this._der.readContents(this._type);
+    } catch (e) {
+      console.log("error parsing string type");
+      throw e;
+    }
+    this._der.assertAtEnd();
+  },
+
+  toString: function() {
+    // TODO: UTF8 decoding
+    return this._value.map(function(b) { return String.fromCharCode(b); }).join("");
   },
 };
 
@@ -738,5 +781,5 @@ var pem = "-----BEGIN CERTIFICATE-----\n" +
 var bytes = pemToBytes(pem);
 var cert = new Certificate(bytes);
 cert.parse();
-console.log(cert._tbsCertificate._issuer._rdns[0]._avas[0]._type.toString());
-console.log(cert._tbsCertificate._subject._rdns[0]._avas[0]._type.toString());
+console.log(cert._tbsCertificate._issuer._rdns[0]._avas[0]._value.toString());
+console.log(cert._tbsCertificate._subject._rdns[0]._avas[0]._value.toString());
