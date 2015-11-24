@@ -15,11 +15,18 @@ function showDisplayFields(displayObject, parentNode) {
     var fieldNode = document.createElement("li");
     root.appendChild(fieldNode);
     fieldNode.textContent = field._description;
+    var property = displayObject[field._property];
     if (field._recurse) {
-      showDisplayFields(displayObject[field._property], fieldNode);
+      if (property instanceof Array) {
+        for (var j in property) {
+          showDisplayFields(property[j], fieldNode);
+        }
+      } else {
+        showDisplayFields(property, fieldNode);
+      }
     } else {
-      var property = displayObject[field._property];
-      fieldNode.textContent += ": " + (property ? property.toString() : "(not present)");
+      fieldNode.textContent += ": " + (property != null ? property.toString()
+                                                        : "(not present)");
     }
   }
 }

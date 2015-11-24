@@ -17,6 +17,7 @@ const GeneralizedTime = UNIVERSAL | 0x18; // 0x18
 const SEQUENCE = UNIVERSAL | CONSTRUCTED | 0x10; // 0x30
 const SET = UNIVERSAL | CONSTRUCTED | 0x11; // 0x31
 
+const ERROR_LIBRARY_FAILURE = "error: library failure";
 const ERROR_DATA_TRUNCATED = "error: data truncated";
 const ERROR_UNEXPECTED_TAG = "error: unexpected tag";
 const ERROR_UNSUPPORTED_ASN1 = "error: unsupported asn.1";
@@ -30,6 +31,9 @@ const ERROR_TIME_NOT_VALID = "error: Time not valid";
 const ERROR_INVALID_BOOLEAN_ENCODING = "error: invalid BOOLEAN encoding";
 const ERROR_INVALID_BOOLEAN_VALUE = "error: invalid BOOLEAN value";
 const ERROR_UNSUPPORTED_STRING_TYPE = "error: unsupported string type";
+const ERROR_UNSUPPORTED_VERSION = "error: unsupported version";
+
+const X509v3 = 2;
 
 var der = function(bytes) {
   this._bytes = bytes;
@@ -88,7 +92,6 @@ der.prototype = {
     }
     var contents = this._bytes.slice(this._cursor, this._cursor + length);
     this._cursor += length;
-    //console.log("read " + length + " bytes. Cursor is now at " + this._cursor);
     return contents;
   },
 
@@ -157,17 +160,7 @@ der.prototype = {
   readINTEGER: function() {
     // TODO: validate contents, handle negative values
     // TODO: handle restrictions on values
-    var contents = this._readTagAndGetContents(INTEGER);
-    // If it's too long to represent in 64 bits, return as an array of bytes.
-    if (contents.length > 7) {
-      return contents;
-    }
-    var value = 0;
-    while (contents.length > 0) {
-      value *= 256;
-      value += contents.shift();
-    }
-    return value;
+    return this._readTagAndGetContents(INTEGER);
   },
 
   readBOOLEAN: function() {
@@ -243,9 +236,24 @@ var oid = function(bytes) {
 oid.prototype = {
   _dottedStringToDescription: {
     "1.2.840.113549.1.1.11": "sha256WithRSAEncryption",
+    "1.3.6.1.5.5.7.1.1": "id-pe-authorityInfoAccess",
+    "2.5.29.14": "id-ce-subjectKeyIdentifier",
+    "2.5.29.15": "id-ce-keyUsage",
+    "2.5.29.17": "id-ce-subjectAlternativeName",
+    "2.5.29.19": "id-ce-basicConstraints",
     "2.5.29.30": "id-ce-nameConstraints",
+    "2.5.29.31": "id-ce-cRLDistributionPoints",
+    "2.5.29.32": "id-ce-certificatePolicies",
+    "2.5.29.35": "id-ce-authorityKeyIdentifier",
     "2.5.29.37": "id-ce-extKeyUsage",
     "2.5.4.3": "id-at-commonName",
+    "2.5.4.5": "id-at-serialNumber",
+    "2.5.4.6": "id-at-countryName",
+    "2.5.4.7": "id-at-localityName",
+    "2.5.4.8": "id-at-stateOrProvinceName",
+    "2.5.4.9": "id-at-streetAddress",
+    "2.5.4.10": "id-at-organizationName",
+    "2.5.4.11": "id-at-organizationalUnitName",
   },
 
   asDottedString: function() {
@@ -308,7 +316,7 @@ Certificate.prototype = {
     }
 
     try {
-      this._signatureValue = contents.readBITSTRING();
+      this._signatureValue = new ByteArray(contents.readBITSTRING());
     } catch (e) {
       console.log("error parsing signatureValue");
       throw e;
@@ -331,12 +339,12 @@ var TBSCertificate = function(der) {
   this._displayFields = [
     new DisplayField("_version", "version", false),
     new DisplayField("_serialNumber", "serialNumber", false),
-    new DisplayField("_signature", "signature", false),
-    new DisplayField("_issuer", "issuer", false),
+    new DisplayField("_signature", "signature", true),
+    new DisplayField("_issuer", "issuer", true),
     new DisplayField("_validity", "validity", true),
-    new DisplayField("_subject", "subject", false),
+    new DisplayField("_subject", "subject", true),
     new DisplayField("_subjectPublicKeyInfo", "subjectPublicKeyInfo", false),
-    new DisplayField("_extensions", "extensions", false),
+    new DisplayField("_extensions", "extensions", true),
   ];
 };
 
@@ -356,7 +364,11 @@ TBSCertificate.prototype = {
         this._version = 1;
       } else {
         var versionContents = contents.readGivenTag(versionTag);
-        this._version = versionContents.readINTEGER() + 1;
+        var versionBytes = versionContents.readINTEGER();
+        if (versionBytes.length != 1 || versionBytes[0] != X509v3) {
+          throw ERROR_UNSUPPORTED_VERSION;
+        }
+        this._version = 3;
         versionContents.assertAtEnd();
       }
     } catch (e) {
@@ -365,7 +377,7 @@ TBSCertificate.prototype = {
     }
 
     try {
-      this._serialNumber = contents.readINTEGER();
+      this._serialNumber = new ByteArray(contents.readINTEGER());
     } catch (e) {
       console.log("error parsing serialNumber");
       throw e;
@@ -404,7 +416,8 @@ TBSCertificate.prototype = {
     }
 
     try {
-      this._subjectPublicKeyInfo = new SubjectPublicKeyInfo(contents.readTLV());
+      this._subjectPublicKeyInfo = new SubjectPublicKeyInfo(
+        contents.readTLV());
       this._subjectPublicKeyInfo.parse();
     } catch (e) {
       console.log("error parsing subjectPublicKeyInfo");
@@ -441,6 +454,28 @@ TBSCertificate.prototype = {
     }
     contents.assertAtEnd();
     this._der.assertAtEnd();
+  },
+};
+
+function bytesToHexString(bytes) {
+  var output = "";
+  for (var i in bytes) {
+    var hexByte = bytes[i].toString(16);
+    if (hexByte.length == 1) {
+      hexByte = "0" + hexByte;
+    }
+    output += (output.length != 0 ? ":" : "") + hexByte;
+  }
+  return output;
+}
+
+var ByteArray = function(bytes) {
+  this._bytes = bytes;
+};
+
+ByteArray.prototype = {
+  toString: function() {
+    return bytesToHexString(this._bytes);
   },
 };
 
@@ -485,6 +520,9 @@ AlgorithmIdentifier.prototype = {
 var Name = function(der) {
   this._der = der;
   this._rdns = null;
+  this._displayFields = [
+    new DisplayField("_rdns", "RDN", true),
+  ];
 };
 
 Name.prototype = {
@@ -515,6 +553,9 @@ Name.prototype = {
 var RDN = function(der) {
   this._der = der;
   this._avas = null;
+  this._displayFields = [
+    new DisplayField("_avas", "AVA", true),
+  ];
 };
 
 RDN.prototype = {
@@ -546,6 +587,10 @@ var AVA = function(der) {
   this._der = der;
   this._type = null;
   this._value = null;
+  this._displayFields = [
+    new DisplayField("_type", "type", false),
+    new DisplayField("_value", "value", false),
+  ];
 };
 
 AVA.prototype = {
@@ -646,7 +691,8 @@ function utf8BytesToString(bytes) {
       if ((byte3 >> 6) != 2) {
         throw ERROR_INVALID_UTF8_ENCODING;
       }
-      var codepoint = ((byte1 & 0x1F) << 12) + ((byte2 & 0x3F) << 6) + (byte3 & 0x3F);
+      var codepoint = ((byte1 & 0x1F) << 12) + ((byte2 & 0x3F) << 6) +
+                      (byte3 & 0x3F);
       result += String.fromCharCode(codepoint);
     } else {
       throw ERROR_INVALID_UTF8_ENCODING;
@@ -661,8 +707,8 @@ var Time = function(der) {
   this._year = null;
   this._month = null;
   this._hour = null;
-  this._minutes = null;
-  this._seconds = null;
+  this._minute = null;
+  this._second = null;
 };
 
 Time.prototype = {
@@ -711,11 +757,11 @@ Time.prototype = {
       
       var min1 = this._validateDigit(contents.readByte());
       var min2 = this._validateDigit(contents.readByte());
-      this._minutes = min1 * 10 + min2;
+      this._minute = min1 * 10 + min2;
       
       var s1 = this._validateDigit(contents.readByte());
       var s2 = this._validateDigit(contents.readByte());
-      this._seconds = s1 * 10 + s2;
+      this._second = s1 * 10 + s2;
 
       var z = contents.readByte();
       if (z != 'Z'.charCodeAt(0)) {
@@ -740,6 +786,12 @@ Time.prototype = {
     }
     return d - '0'.charCodeAt(0);
   },
+
+  toString: function() {
+    return (new Date(Date.UTC(this._year, this._month + 1,
+                              this._day, this._hour, this._minute,
+                              this._second))).toString();
+  },
 };
 
 var Validity = function(der) {
@@ -762,14 +814,16 @@ Validity.prototype = {
       throw e;
     }
     try {
-      this._notBefore = new Time(contents.readTLVChoice([UTCTime, GeneralizedTime]));
+      this._notBefore = new Time(
+        contents.readTLVChoice([UTCTime, GeneralizedTime]));
       this._notBefore.parse();
     } catch (e) {
       console.log("error parsing notBefore");
       throw e;
     }
     try {
-      this._notAfter = new Time(contents.readTLVChoice([UTCTime, GeneralizedTime]));
+      this._notAfter = new Time(
+        contents.readTLVChoice([UTCTime, GeneralizedTime]));
       this._notAfter.parse();
     } catch (e) {
       console.log("error parsing notAfter");
@@ -794,6 +848,11 @@ var Extension = function(der) {
   this._oid = null;
   this._critical = null;
   this._value = null;
+  this._displayFields = [
+    new DisplayField("_oid", "type", false),
+    new DisplayField("_critical", "critical", false),
+    new DisplayField("_value", "value", false),
+  ];
 };
 
 Extension.prototype = {
@@ -814,7 +873,14 @@ Extension.prototype = {
     try {
       // TODO: check for explicit encoding of DEFAULT FALSE
       if (contents.peekTag(BOOLEAN)) {
-        this._critical = contents.readBOOLEAN();
+        var criticalValue = contents.readBOOLEAN();
+        if (criticalValue == 0xff) {
+          this._critical = true;
+        } else if (criticalValue == 0x00) {
+          this._critical = false;
+        } else {
+          throw ERROR_LIBRARY_FAILURE;
+        }
       } else {
         this._critical = false;
       }
