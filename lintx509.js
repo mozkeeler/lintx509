@@ -202,7 +202,7 @@ der.prototype = {
     if (contents.length != 0) {
       throw ERROR_NULL_WITH_DATA;
     }
-    return null;
+    return "NULL";
   },
 
   readContents: function(tag) {
@@ -236,6 +236,7 @@ var oid = function(bytes) {
 
 oid.prototype = {
   _dottedStringToDescription: {
+    "1.2.840.113549.1.1.1": "rsaEncryption",
     "1.2.840.113549.1.1.11": "sha256WithRSAEncryption",
     "1.3.6.1.5.5.7.1.1": "id-pe-authorityInfoAccess",
     "2.5.29.14": "id-ce-subjectKeyIdentifier",
@@ -344,7 +345,7 @@ var TBSCertificate = function(der) {
     new DisplayField("_issuer", "issuer", true),
     new DisplayField("_validity", "validity", true),
     new DisplayField("_subject", "subject", true),
-    new DisplayField("_subjectPublicKeyInfo", "subjectPublicKeyInfo", false),
+    new DisplayField("_subjectPublicKeyInfo", "subjectPublicKeyInfo", true),
     new DisplayField("_extensions", "extensions", true),
   ];
 };
@@ -836,12 +837,83 @@ Validity.prototype = {
   },
 };
 
+var RSAPublicKey = function(der) {
+  this._der = der;
+  this._modulus = null;
+  this._publicExponent = null;
+  this._displayFields = [
+    new DisplayField("_modulus", "modulus", false),
+    new DisplayField("_publicExponent", "publicExponent", false),
+  ];
+};
+
+RSAPublicKey.prototype = {
+  parse: function() {
+    var contents;
+    try {
+      contents = this._der.readSEQUENCE();
+    } catch (e) {
+      console.log("error parsing RSAPublicKey");
+      throw e;
+    }
+    try {
+      this._modulus = new ByteArray(contents.readINTEGER(), "");
+    } catch (e) {
+      console.log("error parsing modulus");
+      throw e;
+    }
+    try {
+      this._publicExponent = new ByteArray(contents.readINTEGER(), "");
+    } catch (e) {
+      console.log("error parsing publicExponent");
+      throw e;
+    }
+    contents.assertAtEnd();
+    this._der.assertAtEnd();
+  },
+};
+
 var SubjectPublicKeyInfo = function(der) {
   this._der = der;
+  this._algorithm = null;
+  this._subjectPublicKey = null;
+  this._displayFields = [
+    new DisplayField("_algorithm", "algorithm", true),
+    new DisplayField("_subjectPublicKey", "subjectPublicKey", true),
+  ];
 };
 
 SubjectPublicKeyInfo.prototype = {
   parse: function() {
+    var contents;
+    try {
+      contents = this._der.readSEQUENCE();
+    } catch (e) {
+      console.log("error parsing SubjectPublicKeyInfo");
+      throw e;
+    }
+    try {
+      this._algorithm = new AlgorithmIdentifier(contents.readTLV());
+      this._algorithm.parse();
+    } catch (e) {
+      console.log("error parsing algorithm");
+      throw e;
+    }
+    try {
+      var subjectPublicKeyBytes = contents.readBITSTRING();
+      if (this._algorithm._oid.toString() == "rsaEncryption") {
+        this._subjectPublicKey = new RSAPublicKey(
+          new der(subjectPublicKeyBytes));
+        this._subjectPublicKey.parse();
+      } else {
+        this._subjectPublicKey = new ByteArray(subjectPublicKeyBytes, "");
+      }
+    } catch (e) {
+      console.log("error parsing subjectPublicKey");
+      throw e;
+    }
+    contents.assertAtEnd();
+    this._der.assertAtEnd();
   },
 };
 
