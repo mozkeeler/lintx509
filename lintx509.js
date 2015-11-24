@@ -261,11 +261,25 @@ oid.prototype = {
   },
 };
 
+var DisplayField = function(property, description, recurse) {
+  this._property = property;
+  this._description = description;
+  this._recurse = recurse;
+};
+
+DisplayField.prototype = {
+};
+
 var Certificate = function(bytes) {
   this._der = new der(bytes);
   this._tbsCertificate = null;
   this._signatureAlgorithm = null;
   this._signatureValue = null;
+  this._displayFields = [
+    new DisplayField("_tbsCertificate", "tbsCertificate", true),
+    new DisplayField("_signatureAlgorithm", "signatureAlgorithm", true),
+    new DisplayField("_signatureValue", "signatureValue", false),
+  ];
 };
 
 Certificate.prototype = {
@@ -307,6 +321,23 @@ Certificate.prototype = {
 var TBSCertificate = function(der) {
   this._der = der;
   this._version = null;
+  this._serialNumber = null;
+  this._signature = null;
+  this._issuer = null;
+  this._validity = null;
+  this._subject = null;
+  this._subjectPublicKeyInfo = null;
+  this._extensions = null;
+  this._displayFields = [
+    new DisplayField("_version", "version", false),
+    new DisplayField("_serialNumber", "serialNumber", false),
+    new DisplayField("_signature", "signature", false),
+    new DisplayField("_issuer", "issuer", false),
+    new DisplayField("_validity", "validity", true),
+    new DisplayField("_subject", "subject", false),
+    new DisplayField("_subjectPublicKeyInfo", "subjectPublicKeyInfo", false),
+    new DisplayField("_extensions", "extensions", false),
+  ];
 };
 
 TBSCertificate.prototype = {
@@ -417,6 +448,10 @@ var AlgorithmIdentifier = function(der) {
   this._der = der;
   this._oid = null;
   this._params = null;
+  this._displayFields = [
+    new DisplayField("_oid", "algorithm", false),
+    new DisplayField("_params", "parameters", false),
+  ];
 };
 
 AlgorithmIdentifier.prototype = {
@@ -457,7 +492,6 @@ Name.prototype = {
     var contents;
     try {
       contents = this._der.readSEQUENCE();
-      console.log(contents);
     } catch (e) {
       console.log("error parsing Name");
       throw e;
@@ -712,6 +746,10 @@ var Validity = function(der) {
   this._der = der;
   this._notBefore = null;
   this._notAfter = null;
+  this._displayFields = [
+    new DisplayField("_notBefore", "notBefore", false),
+    new DisplayField("_notAfter", "notAfter", false),
+  ];
 };
 
 Validity.prototype = {
@@ -795,4 +833,7 @@ Extension.prototype = {
   },
 };
 
-exports.Certificate = Certificate;
+try {
+  exports.Certificate = Certificate;
+} catch (e) {
+}
