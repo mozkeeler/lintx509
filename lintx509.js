@@ -32,6 +32,7 @@ const ERROR_INVALID_BOOLEAN_ENCODING = "error: invalid BOOLEAN encoding";
 const ERROR_INVALID_BOOLEAN_VALUE = "error: invalid BOOLEAN value";
 const ERROR_UNSUPPORTED_STRING_TYPE = "error: unsupported string type";
 const ERROR_UNSUPPORTED_VERSION = "error: unsupported version";
+const ERROR_UNSUPPORTED_EXTENSION_VALUE = "error: unsupported extension value";
 
 const X509v3 = 2;
 
@@ -316,7 +317,7 @@ Certificate.prototype = {
     }
 
     try {
-      this._signatureValue = new ByteArray(contents.readBITSTRING());
+      this._signatureValue = new ByteArray(contents.readBITSTRING(), "");
     } catch (e) {
       console.log("error parsing signatureValue");
       throw e;
@@ -377,7 +378,7 @@ TBSCertificate.prototype = {
     }
 
     try {
-      this._serialNumber = new ByteArray(contents.readINTEGER());
+      this._serialNumber = new ByteArray(contents.readINTEGER(), ":");
     } catch (e) {
       console.log("error parsing serialNumber");
       throw e;
@@ -457,25 +458,26 @@ TBSCertificate.prototype = {
   },
 };
 
-function bytesToHexString(bytes) {
+function bytesToHexString(bytes, displayDelimiter) {
   var output = "";
   for (var i in bytes) {
     var hexByte = bytes[i].toString(16);
     if (hexByte.length == 1) {
       hexByte = "0" + hexByte;
     }
-    output += (output.length != 0 ? ":" : "") + hexByte;
+    output += (output.length != 0 ? displayDelimiter : "") + hexByte;
   }
   return output;
 }
 
-var ByteArray = function(bytes) {
+var ByteArray = function(bytes, displayDelimiter) {
   this._bytes = bytes;
+  this._displayDelimiter = displayDelimiter;
 };
 
 ByteArray.prototype = {
   toString: function() {
-    return bytesToHexString(this._bytes);
+    return bytesToHexString(this._bytes, this._displayDelimiter);
   },
 };
 
@@ -843,6 +845,64 @@ SubjectPublicKeyInfo.prototype = {
   },
 };
 
+var BasicConstraints = function(der) {
+  this._der = der;
+  this._cA = null;
+  this._pathLenConstraint = null;
+  this._displayFields = [
+    new DisplayField("_cA", "cA", false),
+    new DisplayField("_pathLenConstraint", "pathLenConstraint", false),
+  ];
+};
+
+BasicConstraints.prototype = {
+  parse: function() {
+    var contents;
+    try {
+      contents = this._der.readSEQUENCE();
+    } catch (e) {
+      console.log("error parsing BasicConstraints");
+      throw e;
+    }
+    try {
+      // TODO: check for explicit encoding of DEFAULT FALSE
+      if (contents.peekTag(BOOLEAN)) {
+        var cAValue = contents.readBOOLEAN();
+        if (cAValue == 0xff) {
+          this._cA = true;
+        } else if (cAValue == 0x00) {
+          this._cA = false;
+        } else {
+          throw ERROR_LIBRARY_FAILURE;
+        }
+      } else {
+        this._cA = false;
+      }
+    } catch (e) {
+      console.log("error parsing cA");
+      throw e;
+    }
+    try {
+      if (contents.peekTag(INTEGER)) {
+        var pathLenConstraintBytes = contents.readINTEGER();
+        if (pathLenConstraintBytes.length != 1) {
+          throw ERROR_UNSUPPORTED_EXTENSION_VALUE;
+        }
+        this._pathLenConstraint = pathLenConstraintBytes[0];
+      }
+    } catch (e) {
+      console.log("error parsing pathLenConstraint");
+      throw e;
+    }
+    contents.assertAtEnd();
+    this._der.assertAtEnd();
+  },
+};
+
+var KnownExtensions = {
+  "id-ce-basicConstraints": BasicConstraints,
+};
+
 var Extension = function(der) {
   this._der = der;
   this._oid = null;
@@ -851,7 +911,7 @@ var Extension = function(der) {
   this._displayFields = [
     new DisplayField("_oid", "type", false),
     new DisplayField("_critical", "critical", false),
-    new DisplayField("_value", "value", false),
+    new DisplayField("_value", "value", true),
   ];
 };
 
@@ -890,6 +950,11 @@ Extension.prototype = {
     }
     try {
       this._value = contents.readOCTETSTRING();
+      if (this._oid.toString() in KnownExtensions) {
+        var extensionType = KnownExtensions[this._oid.toString()];
+        this._value = new extensionType(new der(this._value));
+        this._value.parse();
+      }
     } catch (e) {
       console.log("error parsing extnValue");
       throw e;

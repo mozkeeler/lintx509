@@ -25,8 +25,16 @@ function showDisplayFields(displayObject, parentNode) {
         showDisplayFields(property, fieldNode);
       }
     } else {
-      fieldNode.textContent += ": " + (property != null ? property.toString()
-                                                        : "(not present)");
+      var propertyValue = property != null ? property.toString()
+                                           : "(not present)";
+      if (propertyValue.length < 64) {
+        fieldNode.textContent += ": " + propertyValue;
+      } else {
+        var propertyValueBox = document.createElement("div");
+        fieldNode.appendChild(propertyValueBox);
+        propertyValueBox.setAttribute("class", "lintx509PropertyValueBox");
+        propertyValueBox.textContent = propertyValue;
+      }
     }
   }
 }
