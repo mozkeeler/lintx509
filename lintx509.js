@@ -49,7 +49,6 @@ der.prototype = {
     }
     var val = this._bytes[this._cursor];
     this._cursor++;
-    //console.log("read " + val + ". Cursor is now at " + this._cursor);
     return val;
   },
 
@@ -441,14 +440,9 @@ TBSCertificate.prototype = {
     if (contents.peekTag(extensionsTag)) {
       try {
         var extensionSequence = contents.readGivenTag(extensionsTag);
-        var extensions = extensionSequence.readSEQUENCE();
+        this._extensions = new Extensions(extensionSequence.readTLV());
+        this._extensions.parse();
         extensionSequence.assertAtEnd();
-        this._extensions = [];
-        while (!extensions.atEnd()) {
-          var extension = new Extension(extensions.readTLV());
-          extension.parse();
-          this._extensions.push(extension);
-        }
       } catch (e) {
         console.log("error parsing extensions");
         throw e;
@@ -975,6 +969,41 @@ var KnownExtensions = {
   "id-ce-basicConstraints": BasicConstraints,
 };
 
+var Extensions = function(der) {
+  this._der = der;
+  this._extensions = null;
+  this._displayFields = [
+    new DisplayField("_extensions", "extension", true),
+  ];
+};
+
+Extensions.prototype = {
+  parse: function() {
+    var contents;
+    try {
+      contents = this._der.readSEQUENCE();
+    } catch (e) {
+      console.log("error parsing Extensions");
+      throw e;
+    }
+    try {
+      while (!contents.atEnd()) {
+        this._extensions = [];
+        while (!contents.atEnd()) {
+          var extension = new Extension(contents.readTLV());
+          extension.parse();
+          this._extensions.push(extension);
+        }
+      }
+    } catch (e) {
+      console.log("error parsing Extensions");
+      throw e;
+    }
+    contents.assertAtEnd();
+    this._der.assertAtEnd();
+  },
+};
+
 var Extension = function(der) {
   this._der = der;
   this._oid = null;
@@ -1026,6 +1055,8 @@ Extension.prototype = {
         var extensionType = KnownExtensions[this._oid.toString()];
         this._value = new extensionType(new der(this._value));
         this._value.parse();
+      } else {
+        this._displayFields[2]._recurse = false; // TODO: eh...
       }
     } catch (e) {
       console.log("error parsing extnValue");

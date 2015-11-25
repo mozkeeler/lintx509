@@ -1,10 +1,15 @@
 function showCertificate(lintx509cert, domNode) {
   var root = document.createElement("ul");
   domNode.appendChild(root);
-  var certificateNode = document.createElement("li");
-  root.appendChild(certificateNode);
-  certificateNode.textContent = "Certificate";
+  var certificateNode = appendListElementWithText("Certificate", root);
   showDisplayFields(lintx509cert, certificateNode);
+}
+
+function appendListElementWithText(text, parentNode) {
+  var childNode = document.createElement("li");
+  parentNode.appendChild(childNode);
+  childNode.textContent = text;
+  return childNode;
 }
 
 function showDisplayFields(displayObject, parentNode) {
@@ -12,19 +17,19 @@ function showDisplayFields(displayObject, parentNode) {
   parentNode.appendChild(root);
   for (var i in displayObject._displayFields) {
     var field = displayObject._displayFields[i];
-    var fieldNode = document.createElement("li");
-    root.appendChild(fieldNode);
-    fieldNode.textContent = field._description;
     var property = displayObject[field._property];
     if (field._recurse) {
       if (property instanceof Array) {
         for (var j in property) {
+          var fieldNode = appendListElementWithText(field._description, root);
           showDisplayFields(property[j], fieldNode);
         }
       } else {
+        var fieldNode = appendListElementWithText(field._description, root);
         showDisplayFields(property, fieldNode);
       }
     } else {
+      var fieldNode = appendListElementWithText(field._description, root);
       var propertyValue = property != null ? property.toString()
                                            : "(not present)";
       if (propertyValue.length < 64) {
