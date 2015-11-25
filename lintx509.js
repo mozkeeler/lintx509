@@ -42,7 +42,6 @@ var der = function(bytes) {
 };
 
 der.prototype = {
-
   readByte: function() {
     if (this._cursor >= this._bytes.length) {
       throw ERROR_DATA_TRUNCATED;
@@ -965,8 +964,29 @@ BasicConstraints.prototype = {
   },
 };
 
+var SubjectKeyIdentifier = function(der) {
+  this._der = der;
+  this._keyIdentifier = null;
+  this._displayFields = [
+    new DisplayField("_keyIdentifier", "keyIdentifier", false),
+  ];
+};
+
+SubjectKeyIdentifier.prototype = {
+  parse: function() {
+    try {
+      this._keyIdentifier = new ByteArray(this._der.readOCTETSTRING(), ":");
+    } catch (e) {
+      console.log("error parsing keyIdentifier");
+      throw e;
+    }
+    this._der.assertAtEnd();
+  },
+};
+
 var KnownExtensions = {
   "id-ce-basicConstraints": BasicConstraints,
+  "id-ce-subjectKeyIdentifier": SubjectKeyIdentifier,
 };
 
 var Extensions = function(der) {
