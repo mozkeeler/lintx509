@@ -5,16 +5,30 @@ function showCertificate(lintx509cert, domNode) {
   showDisplayFields(lintx509cert, certificateNode);
 }
 
+function toggleDisplay(evt) {
+  evt.stopPropagation();
+  if (evt.target.childNodes.length == 2) {
+    var child = evt.target.childNodes[1];
+    if ("classList" in child) {
+      child.classList.toggle("hidden");
+    }
+  }
+}
+
 function appendListElementWithText(text, parentNode) {
   var childNode = document.createElement("li");
   parentNode.appendChild(childNode);
   childNode.textContent = text;
+  childNode.addEventListener("click", toggleDisplay);
   return childNode;
 }
 
 function showDisplayFields(displayObject, parentNode) {
   var root = document.createElement("ul");
   parentNode.appendChild(root);
+  if (displayObject == null) {
+    return;
+  }
   if (!("_displayFields" in displayObject)) {
     appendListElementWithText(displayObject.toString(), root);
     return;
@@ -41,7 +55,7 @@ function showDisplayFields(displayObject, parentNode) {
       } else {
         var propertyValueBox = document.createElement("div");
         fieldNode.appendChild(propertyValueBox);
-        propertyValueBox.setAttribute("class", "lintx509PropertyValueBox");
+        propertyValueBox.classList.add("lintx509PropertyValueBox");
         propertyValueBox.textContent = propertyValue;
       }
     }

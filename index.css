@@ -5,4 +5,9 @@ div.lintx509PropertyValueBox {
 
 li {
   font-family: monospace;
+  cursor: default;
+}
+
+.hidden {
+  display: none;
 }
