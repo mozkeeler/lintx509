@@ -237,6 +237,12 @@ oid.prototype = {
     "1.2.840.113549.1.1.1": "rsaEncryption",
     "1.2.840.113549.1.1.11": "sha256WithRSAEncryption",
     "1.3.6.1.5.5.7.1.1": "id-pe-authorityInfoAccess",
+    "1.3.6.1.5.5.7.3.1": "id-kp-serverAuth",
+    "1.3.6.1.5.5.7.3.2": "id-kp-clientAuth",
+    "1.3.6.1.5.5.7.3.3": "id-kp-codeSigning",
+    "1.3.6.1.5.5.7.3.4": "id-kp-emailProtection",
+    "1.3.6.1.5.5.7.3.8": "id-kp-timeStamping",
+    "1.3.6.1.5.5.7.3.9": "id-kp-OCSPSigning",
     "2.5.29.14": "id-ce-subjectKeyIdentifier",
     "2.5.29.15": "id-ce-keyUsage",
     "2.5.29.17": "id-ce-subjectAlternativeName",
@@ -977,9 +983,40 @@ SubjectKeyIdentifier.prototype = {
     try {
       this._keyIdentifier = new ByteArray(this._der.readOCTETSTRING(), ":");
     } catch (e) {
-      console.log("error parsing keyIdentifier");
+      console.log("error parsing SubjectKeyIdentifier");
       throw e;
     }
+    this._der.assertAtEnd();
+  },
+};
+
+var ExtKeyUsage = function(der) {
+  this._der = der;
+  this._keyPurposeIds = null;
+  this._displayFields = [
+    new DisplayField("_keyPurposeIds", "keyPurposeId", true),
+  ];
+};
+
+ExtKeyUsage.prototype = {
+  parse: function() {
+    var contents;
+    try {
+      contents = this._der.readSEQUENCE();
+    } catch (e) {
+      console.log("error parsing ExtKeyUsage");
+      throw e;
+    }
+    try {
+      this._keyPurposeIds = [];
+      while (!contents.atEnd()) {
+        this._keyPurposeIds.push(contents.readOID());
+      }
+    } catch (e) {
+      console.log("error parsing keyPurposeId");
+      throw e;
+    }
+    contents.assertAtEnd();
     this._der.assertAtEnd();
   },
 };
@@ -987,6 +1024,7 @@ SubjectKeyIdentifier.prototype = {
 var KnownExtensions = {
   "id-ce-basicConstraints": BasicConstraints,
   "id-ce-subjectKeyIdentifier": SubjectKeyIdentifier,
+  "id-ce-extKeyUsage": ExtKeyUsage,
 };
 
 var Extensions = function(der) {

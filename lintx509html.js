@@ -15,6 +15,10 @@ function appendListElementWithText(text, parentNode) {
 function showDisplayFields(displayObject, parentNode) {
   var root = document.createElement("ul");
   parentNode.appendChild(root);
+  if (!("_displayFields" in displayObject)) {
+    appendListElementWithText(displayObject.toString(), root);
+    return;
+  }
   for (var i in displayObject._displayFields) {
     var field = displayObject._displayFields[i];
     var property = displayObject[field._property];
