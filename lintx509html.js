@@ -11,6 +11,7 @@ function toggleDisplay(evt) {
     var child = evt.target.childNodes[1];
     if ("classList" in child) {
       child.classList.toggle("hidden");
+      evt.target.classList.toggle("expandable");
     }
   }
 }

@@ -11,3 +11,11 @@ li {
 .hidden {
   display: none;
 }
+
+li {
+  list-style-image: url("dash.svg");
+}
+
+li.expandable {
+  list-style-image: url("cross.svg");
+}
