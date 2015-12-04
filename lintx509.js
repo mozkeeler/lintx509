@@ -33,8 +33,11 @@ const ERROR_INVALID_BOOLEAN_VALUE = "error: invalid BOOLEAN value";
 const ERROR_UNSUPPORTED_STRING_TYPE = "error: unsupported string type";
 const ERROR_UNSUPPORTED_VERSION = "error: unsupported version";
 const ERROR_UNSUPPORTED_EXTENSION_VALUE = "error: unsupported extension value";
+const ERROR_UNKNOWN_ALGORITHM_IDENTIFIER_PARAMS = "error: unknown algorithm identifier params";
+const ERROR_UNSUPPORTED_EC_PUBLIC_KEY = "error: unsupported EC public key";
 
 const X509v3 = 2;
+const EC_UNCOMPRESSED_FORM = 4;
 
 var der = function(bytes) {
   this._bytes = bytes;
@@ -49,6 +52,10 @@ der.prototype = {
     var val = this._bytes[this._cursor];
     this._cursor++;
     return val;
+  },
+
+  getRemainingLength: function() {
+    return this._bytes.length - this._cursor;
   },
 
   _readExpectedTag: function(expectedTag) {
@@ -85,7 +92,7 @@ der.prototype = {
     throw ERROR_UNSUPPORTED_LENGTH;
   },
 
-  _readBytes: function(length) {
+  readBytes: function(length) {
     if (this._cursor > this._bytes.length - length) {
       throw ERROR_DATA_TRUNCATED;
     }
@@ -97,7 +104,7 @@ der.prototype = {
   _readTagAndGetContents: function(tag) {
     this._readExpectedTag(tag);
     var length = this._readLength();
-    var contents = this._readBytes(length);
+    var contents = this.readBytes(length);
     return contents;
   },
 
@@ -113,7 +120,7 @@ der.prototype = {
     this._readExpectedTag(tag);
     var length = this._readLength();
     // read the bytes so we know they're there (also to advance the cursor)
-    this._readBytes(length);
+    this.readBytes(length);
     var tlv = this._bytes.slice(mark, this._cursor);
     return new der(tlv);
   },
@@ -234,6 +241,9 @@ var oid = function(bytes) {
 
 oid.prototype = {
   _dottedStringToDescription: {
+    "1.2.840.10045.2.1": "ecPublicKey",
+    "1.2.840.10045.3.1.7": "secp256r1",
+    "1.2.840.10045.4.3.2": "ecdsa-with-SHA256",
     "1.2.840.113549.1.1.1": "rsaEncryption",
     "1.2.840.113549.1.1.11": "sha256WithRSAEncryption",
     "1.3.6.1.5.5.7.1.1": "id-pe-authorityInfoAccess",
@@ -507,11 +517,22 @@ AlgorithmIdentifier.prototype = {
       throw e;
     }
     if (!contents.atEnd()) {
-      try {
-        this._params = contents.readNULL();
-      } catch (e) {
-        console.log("error parsing params assumed to be NULL");
-        throw e;
+      if (contents.peekTag(NULL)) {
+        try {
+          this._params = contents.readNULL();
+        } catch (e) {
+          console.log("error parsing NULL params");
+          throw e;
+        }
+      } else if (contents.peekTag(OID)) {
+        try {
+          this._params = contents.readOID();
+        } catch (e) {
+          console.log("error parsing OID params");
+          throw e;
+        }
+      } else {
+        throw ERROR_UNKNOWN_ALGORITHM_IDENTIFIER_PARAMS;
       }
     }
     contents.assertAtEnd();
@@ -872,6 +893,37 @@ RSAPublicKey.prototype = {
   },
 };
 
+var ECPublicKey = function(der) {
+  this._der = der;
+  this._x = null;
+  this._y = null;
+  this._displayFields = [
+    new DisplayField("_x", "x", false),
+    new DisplayField("_y", "y", false),
+  ];
+};
+
+ECPublicKey.prototype = {
+  parse: function() {
+    try {
+      if (this._der.readByte() != EC_UNCOMPRESSED_FORM) {
+        throw ERROR_UNSUPPORTED_EC_PUBLIC_KEY;
+      }
+      var remainingLength = this._der.getRemainingLength();
+      if (remainingLength % 2 != 0) {
+        throw ERROR_UNSUPPORTED_EC_PUBLIC_KEY;
+      }
+      var pointLength = remainingLength / 2;
+      this._x = new ByteArray(this._der.readBytes(pointLength), "");
+      this._y = new ByteArray(this._der.readBytes(pointLength), "");
+    } catch (e) {
+      console.log("error decoding ECPublicKey");
+      throw e;
+    }
+    this._der.assertAtEnd();
+  },
+};
+
 var SubjectPublicKeyInfo = function(der) {
   this._der = der;
   this._algorithm = null;
@@ -902,6 +954,10 @@ SubjectPublicKeyInfo.prototype = {
       var subjectPublicKeyBytes = contents.readBITSTRING();
       if (this._algorithm._oid.toString() == "rsaEncryption") {
         this._subjectPublicKey = new RSAPublicKey(
+          new der(subjectPublicKeyBytes));
+        this._subjectPublicKey.parse();
+      } else if (this._algorithm._oid.toString() == "ecPublicKey") {
+        this._subjectPublicKey = new ECPublicKey(
           new der(subjectPublicKeyBytes));
         this._subjectPublicKey.parse();
       } else {
