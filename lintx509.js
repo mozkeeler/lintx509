@@ -35,6 +35,7 @@ const ERROR_UNSUPPORTED_VERSION = "error: unsupported version";
 const ERROR_UNSUPPORTED_EXTENSION_VALUE = "error: unsupported extension value";
 const ERROR_UNKNOWN_ALGORITHM_IDENTIFIER_PARAMS = "error: unknown algorithm identifier params";
 const ERROR_UNSUPPORTED_EC_PUBLIC_KEY = "error: unsupported EC public key";
+const ERROR_UNSUPPORTED_AUTHORITY_KEY_IDENTIFIER_TYPE = "error: unsupported authority key identifier type";
 
 const X509v3 = 2;
 const EC_UNCOMPRESSED_FORM = 4;
@@ -101,7 +102,7 @@ der.prototype = {
     return contents;
   },
 
-  _readTagAndGetContents: function(tag) {
+  readTagAndGetContents: function(tag) {
     this._readExpectedTag(tag);
     var length = this._readLength();
     var contents = this.readBytes(length);
@@ -156,21 +157,21 @@ der.prototype = {
   },
 
   readSEQUENCE: function() {
-    return new der(this._readTagAndGetContents(SEQUENCE));
+    return new der(this.readTagAndGetContents(SEQUENCE));
   },
 
   readSET: function() {
-    return new der(this._readTagAndGetContents(SET));
+    return new der(this.readTagAndGetContents(SET));
   },
 
   readINTEGER: function() {
     // TODO: validate contents, handle negative values
     // TODO: handle restrictions on values
-    return this._readTagAndGetContents(INTEGER);
+    return this.readTagAndGetContents(INTEGER);
   },
 
   readBOOLEAN: function() {
-    var contents = this._readTagAndGetContents(BOOLEAN);
+    var contents = this.readTagAndGetContents(BOOLEAN);
     if (contents.length != 1) {
       throw ERROR_INVALID_BOOLEAN_ENCODING;
     }
@@ -181,11 +182,11 @@ der.prototype = {
   },
 
   readGivenTag: function(tag) {
-    return new der(this._readTagAndGetContents(tag));
+    return new der(this.readTagAndGetContents(tag));
   },
 
   readBITSTRING: function() {
-    var contents = this._readTagAndGetContents(BITSTRING);
+    var contents = this.readTagAndGetContents(BITSTRING);
     var unusedBits = contents[0];
     if (unusedBits != 0) {
       throw ERROR_UNSUPPORTED_ASN1;
@@ -194,16 +195,16 @@ der.prototype = {
   },
 
   readOCTETSTRING: function() {
-    return this._readTagAndGetContents(OCTETSTRING);
+    return this.readTagAndGetContents(OCTETSTRING);
   },
 
   readOID: function() {
-    var contents = this._readTagAndGetContents(OID);
+    var contents = this.readTagAndGetContents(OID);
     return new oid(contents);
   },
 
   readNULL: function() {
-    var contents = this._readTagAndGetContents(NULL);
+    var contents = this.readTagAndGetContents(NULL);
     if (contents.length != 0) {
       throw ERROR_NULL_WITH_DATA;
     }
@@ -211,7 +212,7 @@ der.prototype = {
   },
 
   readContents: function(tag) {
-    return this._readTagAndGetContents(tag);
+    return this.readTagAndGetContents(tag);
   },
 };
 
@@ -1046,6 +1047,41 @@ SubjectKeyIdentifier.prototype = {
   },
 };
 
+var AuthorityKeyIdentifier = function(der) {
+  this._der = der;
+  this._keyIdentifier = null;
+  this._displayFields = [
+    new DisplayField("_keyIdentifier", "keyIdentifier", false),
+  ];
+};
+
+AuthorityKeyIdentifier.prototype = {
+  parse: function() {
+    var contents;
+    try {
+      contents = this._der.readSEQUENCE();
+    } catch (e) {
+      console.log("error parsing AuthorityKeyIdentifier");
+      throw e;
+    }
+    try {
+      var keyIdentifierTag = CONTEXT_SPECIFIC | 0;
+      if (contents.peekTag(keyIdentifierTag)) {
+        this._keyIdentifier = new ByteArray(
+          contents.readTagAndGetContents(keyIdentifierTag), ":");
+      }
+      if (!contents.atEnd()) {
+        throw ERROR_UNSUPPORTED_AUTHORITY_KEY_IDENTIFIER_TYPE;
+      }
+    } catch (e) {
+      console.log("error parsing AuthorityKeyIdentifier");
+      throw e;
+    }
+    contents.assertAtEnd();
+    this._der.assertAtEnd();
+  },
+};
+
 var ExtKeyUsage = function(der) {
   this._der = der;
   this._keyPurposeIds = null;
@@ -1078,9 +1114,10 @@ ExtKeyUsage.prototype = {
 };
 
 var KnownExtensions = {
+  "id-ce-authorityKeyIdentifier": AuthorityKeyIdentifier,
   "id-ce-basicConstraints": BasicConstraints,
-  "id-ce-subjectKeyIdentifier": SubjectKeyIdentifier,
   "id-ce-extKeyUsage": ExtKeyUsage,
+  "id-ce-subjectKeyIdentifier": SubjectKeyIdentifier,
 };
 
 var Extensions = function(der) {
